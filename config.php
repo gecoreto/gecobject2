@@ -19,7 +19,7 @@ $config_db = array(
     /** Nombre de la base de datos 
      * @property string DB_NAME
      */
-    'database' => 'gecobject',
+    'database' => 'nombre de la base de datos',
     /** Usuario de la base de datos 
      * @property string DB_USER
      */
@@ -46,7 +46,7 @@ $config_db = array(
     'driver' => 'mysql',
     'charset' => 'utf8',
     'collation' => 'utf8_unicode_ci',
-    'tablePrefix' => 'appwork_',
+    'tablePrefix' => '',
 );
 
 function getConfigDb() {
