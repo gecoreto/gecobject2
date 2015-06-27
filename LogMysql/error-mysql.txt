@@ -2,8 +2,8 @@
 **----**----**-----Excepciones generadas en consultas Mysql-----**------**-----**
 
 
-
----------Tue, 2014/02/11 14:52:56---------
-Código de error:	 1054
-Mensaje del error:	 Unknown column 'adsf' in 'where clause'
+---------Tue, 2015/01/13 14:09:26---------
+Código de error:	 1146
+Mensaje del error:	 Table 'crm.usesadrs' doesn't exist
+Lanzado en:	 C:\xampp\htdocs\gecobject2\prueba\gecobject\DataBase\DataBase.php en la linea 188
 ---------Fin del error---------

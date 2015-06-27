@@ -3,15 +3,20 @@
 /**
  * @package DataBase
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
- * @link https://github.com/gecoreto/gecobject
+ * @link https://github.com/gecoreto/gecobject22
  * @author David Garzon <stylegeco@gmail.com>
  */
 
 namespace GecObject\DataBase;
 
 use GecObject\DataBase\DataBase as Db;
+use GecObject\DataBase\Builder\QueryBuilder as Query;
+use GecObject\DataBase\Builder\QueryCompiler as Compiler;
+use GecObject\DataBase\FieldTbl;
 
-class Table {
+class Table extends Query {
+
+    const NAME_TABLEROW = 'GecObject\DataBase\RowTbl';
 
     /** Identifica la clave primaria en Mysql
      * @const SQL_PRIMARY_KEY
@@ -32,26 +37,41 @@ class Table {
      * @var array $rows
      */
     private $rows = array();
+
     /** Array con los nombres correspondientes a los campos de la tabla
      * @var array $rows
      */
     private $nameFields = array();
+
+    /** Array representa cada campo de la db mediante la clase FieldTbl
+     * @var array() $fields 
+     */
+    protected $fields = array();
+
     /** Nombre correspondiente al campo de la Primary Key
      * @var string $nameFieldPK
      */
     private $nameFieldPK;
 
+    /** Array de instancias de las tablas previamente llamadas
+     * @var array $loadedTables
+     */
+    private static $loadedTables = array();
+
     function __construct($table_name) {
         $this->db = Db::database();
-        $this->table_name = $table_name;
-        $this->db->query = "DESC $this->table_name";
-        foreach ($this->db->get_results_from_query() as $campo) {
+        $this->table_name = $this->db->getTablePrefix() . $table_name;
+        $this->from($table_name);
+        foreach ($this->db->select("DESCRIBE $this->table_name") as $campo) {
             if ($campo['Key'] == self::SQL_PRIMARY_KEY) {
                 if (empty($this->nameFieldPK)) //Si tiene dos Primary Key selecciono la primera
                     $this->nameFieldPK = $campo['Field'];
             }
             $this->nameFields[] = $campo['Field'];
+            $this->fields[$campo['Field']] = new FieldTbl($campo, $this->table_name);
         }
+        if (!array_key_exists($table_name, self::$loadedTables))
+            self::$loadedTables[$table_name] = $this;
     }
 
     /**
@@ -68,63 +88,37 @@ class Table {
      */
     public function findByPk($id) {
         /* Busca varias filas en la tabla */
-        if (is_array($id)) {
-            $this->db->query = "";
+        if (is_array($id)) {// $id: array(0 => id1, 1 => id2...)
+            $query = "";
             foreach ($id as $value)
-                $this->db->query .= "SELECT * FROM {$this->table_name} WHERE  $this->nameFieldPK='$value';";
-            $this->db->execute_multi_query();
-            foreach ($this->db->get_results_from_query() as $row)
-                $filas[] = $this->setRow($row, $this->nameFieldPK);
-
-            return $filas;
+                $query .= "SELECT * FROM " . "{$this->table_name} WHERE  $this->nameFieldPK=?; ";
+            $rows = array();
+            foreach ($this->db->selectMultiQuery($query, $id) as $conjunto) {
+                $rows[] = $this->setRow(reset($conjunto), $this->nameFieldPK);
+            }
+            return $rows;
         }
+
         /* Busca una solo fila en la tabla */
-        $this->db->query = "SELECT * FROM {$this->table_name} WHERE  $this->nameFieldPK='$id';";
-        $result = $this->db->get_results_from_query();
+        $result = $this->db->selectOne("SELECT * FROM " . "{$this->table_name} WHERE  $this->nameFieldPK=:id;", [":id" => $id]);
         if (empty($result)) {
             return array();
         } else {
-            return $this->setRow($result[0], $this->nameFieldPK);
+            return $this->setRow($result, $this->nameFieldPK);
         }
     }
 
     /**
      * Retorna el conjunto de registros de la tabla que cumpla con las condiciones
-     * recibidas como parámetro. <br>
-     * <pre>
-     * Donde:
-     * $where debe ser una cadena de condiciones 
-     * en lenguaje de consultas MySQL 
-     * (p.ej., WHERE campo = value and campo2 LIKE "%nombre%"). 
-     * Si no recibe parametros, devolverá todos los registros de la tabla.</pre>
-     * @param string $cols Columnas
-     * @param string $where Condiciones
-     * @param array $order Arreglo Asociativo
-     *      <pre>
-     * array(
-     *              'type' => ASC | DESC
-     *              'columns' => array('column1', 'column2')
-     *          );
-     *      </pre>
-     * @param string $limit Limit
+     * recibidas. 
      * @return array objetos de la clase Row
      */
-    public function findAll($cols = '*', $where = array(), $order = array(), $limit = '') {
-        $this->rows = array();
-        $orderby = "";
-        if (array_key_exists('type', $order) && array_key_exists('columns', $order)) {
-            $tipo = $order['type'];
-            if (in_array($tipo, array('ASC', 'DESC'))) {
-                $columns = implode(',', $order['columns']);
-                $orderby = "ORDER BY $columns $tipo";
-            }
-        }
-        if ($cols != "*")
-            $cols = "{$this->nameFieldPK},$cols";
-        $where = !empty($where) ? self::parseWhere($where) : '';
-        $limit = !empty($limit) ? "LIMIT $limit " : '';
-        $this->db->query = "SELECT $cols FROM {$this->table_name} $where $orderby $limit;";
-        foreach ($this->db->get_results_from_query() as $row) {
+    public function findAll() {
+        $this->rows = [];
+        $compiler = new Compiler();
+        $sql = $compiler->compileSelect($this);
+        $rows = $this->db->select($sql, $compiler->getBindings($this->bindings), __FUNCTION__);
+        foreach ($rows as $row) {
             $this->rows[] = $this->setRow($row, $this->nameFieldPK);
         }
         return $this->rows;
@@ -132,43 +126,42 @@ class Table {
 
     /**
      * Retorna una unica fila de la tabla que cumpla con las condiciones
-     * recibidas como parámetro. <br>
-     * <pre>
-     * Donde:
-     * $where debe ser una cadena de condiciones 
-     * en lenguaje de consultas MySQL 
-     * (p.ej., campo = value and campo2 LIKE "%nombre%"). 
-     * Si no recibe parametros, devolverá todos los registros de la tabla.</pre>
-     * @param string $cols Columnas que desea seleccionar separadas por ","
-     * @param string $where Condiciones
+     * de busqueda. 
+     * 
      * @return RowTbl objeto de la clase RowTbl
      */
-    public function find($cols = '*', $where = array()) {
-        if ($cols != "*")
-            $cols = "{ $this->nameFieldPK},$cols";
-        $where = !empty($where) ? self::parseWhere($where) : '';
-        $this->db->query = "SELECT $cols FROM {$this->table_name} $where;";
-        $row = array_shift($this->db->get_results_from_query());
+    public function find() {
+        $compiler = new Compiler();
+        $sql = $compiler->compileSelect($this);
+        $row = $this->db->selectOne($sql, $compiler->getBindings($this->bindings), __FUNCTION__);
         if (empty($row))
             return [];
         return $this->setRow($row, $this->nameFieldPK);
     }
 
     /**
-     * Retorna el conjunto de registros de la tabla que cumpla con el query recibido como parametro. <br>
-     * Mysql(p.ej., ORDER BY RAND() LIMIT 3). 
-     * @param string $query Limit
-     * @return array|object objetos de la clase RowTbl
+     * Establece las columnas que se van a seleccionar.
+     *
+     * @param  array  $columns
+     * @return Table|$this
      */
-    public function findByQuery($query) {
-        $rows = [];
-        $this->db->query = "SELECT * FROM {$this->table_name} " . $query;
-        foreach ($this->db->get_results_from_query() as $row) {
-            $rows[] = $this->setRow($row, $this->nameFieldPK);
-        }
-        if (count($rows) == 1)
-            return $row[0];
-        return $rows;
+    public function select($columns = array('*')) {
+
+        $this->columns = (is_array($columns)) ? $columns : func_get_args();
+        $this->columns[] = $this->nameFieldPK; //Agrego siempre la columna correspondiente a la primaryKey
+        $this->columns = array_unique($this->columns); //Si la columna primaryKey ya ha sido llamada la elimino
+        return $this;
+    }
+
+    /**
+     * Agrega la tabla que se desea obtener
+     * NOTA: Para la clase table el nombre de la tabla no puede ser modificado
+     * 
+     * @param  string  $table
+     * @return Table
+     */
+    public function from($table) {
+        return parent::from($this->table_name);
     }
 
     /**
@@ -178,22 +171,25 @@ class Table {
      * @return Row Objeto de de la clase RowTbl 
      */
     private function setRow($row, $fieldPk) {
-        $objeto = new RowTbl($this->table_name, $fieldPk, $this->nameFields);
+        $objeto = new RowTbl($this->table_name, $fieldPk, $this->nameFields, $this->fields);
         foreach ($row as $attribute => $value) {
             if (in_array($attribute, $this->nameFields))
-                $objeto->__set($attribute, $value);
+                $objeto->__set(RowTbl::NO_CHANGE_FIELD . $attribute, $value); //Agrego 'NO_CHANGE_FIELD_' al nombre de atributo para saber que no lo debo guardar en $changeFields de RowTbl
         }
         return $objeto;
     }
 
     /**
-     * Crea una nueva isntancia de Table.
+     * Crea o retorna una nueva isntancia de Table.
      * @param string $table_name nombre de la tabla para consultar
      * @return Table 
      */
     static function get($table_name) {
-        $table = new self($table_name);
-        return $table;
+        if (empty($table_name))
+            throw new \Exception("Es necesario el parametro TableName en el constructor de la clase " . __CLASS__);
+        //   if (array_key_exists($table_name, self::$loadedTables))
+        //     return self::$loadedTables[$table_name];
+        return new self($table_name);
     }
 
     /**
@@ -202,40 +198,6 @@ class Table {
      */
     public function getNameFieldPk() {
         return $this->nameFieldPK;
-    }
-
-    /**
-     * Retorna el where para la consulta sql. <br>
-     * @param array $values 
-     * @return String Devuelve un where para generar la consulta sql
-     */
-    private static function parseWhere($values) {
-        $where = "WHERE ";
-        foreach ($values as $column => $val) {
-            switch (true) {
-                case stripos($val, 'LIKE') === 0:
-                    $compare = "LIKE ";
-                    break;
-                case stripos($val, '>') === 0:
-                    $compare = ">";
-                    break;
-                case stripos($val, '<') === 0:
-                    $compare = "<";
-                    break;
-                case stripos($val, '!=') === 0:
-                    $compare = "!=";
-                    break;
-                default:
-                    $compare = "=";
-                    break;
-            }
-            // Elimina el comparador de la cadena $value
-            $val = str_ireplace($compare, '', $val);
-            $where .= "$column $compare '$val' AND ";
-        }
-        //Elimino el ultimo AND para no generar error en la sintaxis sql
-        $where = substr($where, 0, -4);
-        return $where;
     }
 
 }

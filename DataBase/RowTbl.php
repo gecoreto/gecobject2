@@ -3,7 +3,7 @@
 /**
  * @package Database
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
- * @link https://github.com/gecoreto/gecobject
+ * @link https://github.com/gecoreto/gecobject2
  * @author David Garzon <stylegeco@gmail.com>
  */
 
@@ -14,13 +14,27 @@ namespace GecObject\DataBase;
  */
 use GecObject\DataBase\DataBase as Db;
 use GecObject\DataBase\Table;
+use GecObject\DataBase\FieldTbl;
+use GecObject\DataBase\FieldValidate;
 
 class RowTbl {
+
+    const NO_CHANGE_FIELD = 'NO_CHANGE_FIELD_';
+
+    /** String para difirenciar una funcion en el valor de un campo
+     * @const String $SEPARADOR
+     */
+    const SEPARADOR = "__";
 
     /** Array para establecer propiedades dinámicas 
      * @var array() $dynamicFields 
      */
     protected $dynamicFields;
+
+    /** Array representa cada campo de la db mediante la clase FieldTbl
+     * @var array() $fields 
+     */
+    protected $fields;
 
     /** Array para acceder a las Closures 
      * @var array() $closures 
@@ -44,8 +58,14 @@ class RowTbl {
     private $db;
 
     /**
+     * @var array Contiene los nombres de las columnas pertenecientes a la tabla
      */
     protected $nameFields = array();
+
+    /**
+     * @var array Contiene los nombres de las columnas modificadas para hacer un UPDATE
+     */
+    protected $changeFields = array();
 
     /**
      * Constructor de la clase
@@ -69,8 +89,8 @@ class RowTbl {
             case 1:
                 self::__construct1($args[0]);
                 break;
-            case 3:
-                self::__construct3($args[0], $args[1], $args[2]);
+            case 4:
+                self::__construct4($args[0], $args[1], $args[2], $args[3]);
                 break;
         }
     }
@@ -79,18 +99,20 @@ class RowTbl {
         $this->db = Db::database();
         $this->table_name = $table_name;
         $this->db->query = "DESC $table_name";
-        foreach ($this->db->get_results_from_query() as $value) {
-            if ($value['Key'] == "PRI")
+        foreach ($this->db->select("DESCRIBE $this->table_name") as $value) {
+            if ($value['Key'] == Table::SQL_PRIMARY_KEY)
                 $this->fieldPk = $value['Field'];
             $this->nameFields[] = $value['Field'];
+            $this->fields[$value['Field']] = new FieldTbl($value, $this->table_name);
         }
     }
 
-    private function __construct3($table_name, $fieldPk, $nameFieldPK) {
-        $this->fieldPk = $fieldPk;
+    private function __construct4($table_name, $fieldPk, $nameFields, $fields) {
+        $this->fieldPk = ($fieldPk == NULL) ? $this->fieldPk : $fieldPk;
         $this->db = Db::database();
-        $this->table_name = $table_name;
-        $this->nameFields = $nameFieldPK;
+        $this->table_name = ($table_name == NULL) ? $this->table_name : $table_name;
+        $this->nameFields = ($nameFields == NULL) ? $this->nameFields : $nameFields;
+        $this->fields = ($fields == NULL) ? $this->fields : $fields;
     }
 
     /**
@@ -121,12 +143,22 @@ class RowTbl {
      * @param string $value Valor del atributo.
      */
     public function __set($name, $value) {
+        $addChanges = false;
         if ($value instanceof Closure) {
             $this->closures[$name] = $value;
         } else {
+            if (stripos($name, self::NO_CHANGE_FIELD) === 0) {//si el atributo se agrega desde la clase Table
+                $name = str_ireplace(self::NO_CHANGE_FIELD, '', $name); //eliminar el diferenciador 'NO_CHANGE_FIELD_' de $name
+            } else
+                $addChanges = true;
             //solo permite agregar los atributos que coincidan con los campos de la tabla
-            if (in_array($name, $this->nameFields))
+            if (in_array($name, $this->nameFields)) {
+                //validar tipo del campo
+                // FieldValidate::validateField($this->fields[$name], $value);
                 $this->dynamicFields[$name] = $value;
+                if ($addChanges)
+                    array_push($this->changeFields, $name);
+            }
         }
     }
 
@@ -169,7 +201,11 @@ class RowTbl {
             return $values;
         // Para cada atributo dinámico, lo añadimos en el array
         foreach ($this->dynamicFields as $key => $value) {
-            $values[$key] = $value;
+            if (in_array($key, $this->nameFields))//si el atributo dinamico creado corresponde a una columna de la base de datos
+                $values[$key] = $value;
+            else {
+                unset($this->dynamicFields[$key]);
+            }
         }
         return $values;
     }
@@ -179,18 +215,30 @@ class RowTbl {
      * @return boolean retorna TRUE si todo salio bien o FALSE si hay un error
      */
     public function save() {
-        if (!isset($this->getAsArray()[$this->fieldPk]))
-            return false;
+        $vals = $input_parameters = array();
         $atributos = $this->getAsArray();
-        foreach ($atributos as $col => $value) {
-            $vals[] = $col . ' = "' . $value . '"';
-        }
-        $this->db->query = "UPDATE $this->table_name SET " . implode(',', $vals) . " WHERE {$this->fieldPk}='{$atributos[$this->fieldPk]}';";
-        $this->db->execute_single_query(true);
-        if ($this->db->getAffectedRows() === null) {
+        if ($this->db->getValidateField())//Validar el tipo de dato
+            FieldValidate::validateAllFields($this->fields, $atributos);
+        if (!isset($atributos[$this->fieldPk]))
             return false;
+        else if (empty($this->changeFields))//si no se ha modificado ninguna columna omito la clausula del update
+            return true;
+        foreach ($this->changeFields as $col) {
+            $value = $atributos[$col];
+            if (!empty($value)) {
+                if ((substr($value, 0, 2) == self::SEPARADOR && substr($value, -2, 2) == self::SEPARADOR)) {//SI es una funcion de mysql se asigna asi Ej: __NOW__
+                    $value = substr($value, 2, -2);
+                    $vals[] = $col . ' = ' . $value;
+                } else {
+                    $vals[] = $col . ' = :' . $col;
+                    $input_parameters[':' . $col] = $value;
+                }
+            }
         }
-        return true;
+        $input_parameters[":" . $this->fieldPk] = $atributos[$this->fieldPk];
+        $query = "UPDATE $this->table_name SET " . implode(',', $vals) . " WHERE {$this->fieldPk}=:{$this->fieldPk};";
+        $this->db->update($query, $input_parameters, __FUNCTION__);
+        return ($this->db->getError()) ? false : true;
     }
 
     /**
@@ -198,19 +246,26 @@ class RowTbl {
      * @return mixed FALSE on Error Or lastID on OK
      */
     public function add() {
-
-        $cols = $values = array();
+        $cols = $values = $input_parameters = array();
         $atributos = $this->getAsArray();
+        if ($this->db->getValidateField())//Validar el tipo de dato
+            FieldValidate::validateAllFields($this->fields, $atributos);
         foreach ($atributos as $col => $value) {
             $cols[] = $col;
-            $values[] = "'$value'";
+            //SI es una funcion de mysql se asigna asi Ej: __NOW__
+            if ((substr($value, 0, 2) == self::SEPARADOR && substr($value, -2, 2) == self::SEPARADOR)) {
+                $values[] = substr($value, 2, -2);
+            } else {
+                $values[] = ":" . $col;
+                $input_parameters[":" . $col] = $value;
+            }
         }
-        $this->db->query = "INSERT INTO {$this->table_name} " . " (" . implode(",", $cols) . ") " . " VALUES " . " (" . implode(",", $values) . ") ";
-        $this->db->execute_single_query(true);
-        if ($this->db->getAffectedRows() === null) {
+        $query = "INSERT INTO {$this->table_name} " . " (" . implode(",", $cols) . ") " . " VALUES " . " (" . implode(",", $values) . ") ";
+        $this->db->insert($query, $input_parameters, __FUNCTION__);
+        if ($this->db->getError()) {
             return false;
         }
-        $this->__set($this->fieldPk, $this->db->getLastId());
+        $this->__set(RowTbl::NO_CHANGE_FIELD . $this->fieldPk, $this->db->getLastId()); //Agrego 'NO_CHANGE_FIELD_' al nombre de atributo para saber que no lo debo guardar en $changeFields de RowTbl
         return $this->db->getLastId();
     }
 
@@ -219,9 +274,9 @@ class RowTbl {
      * @return boolean 
      */
     public function delete() {
-        $this->db->query = "DELETE FROM {$this->table_name} WHERE {$this->fieldPk}='{$this->__get($this->fieldPk)}';";
-        $this->db->execute_single_query(true);
-        if ($this->db->getAffectedRows() === null) {
+        $query = "DELETE FROM {$this->table_name} WHERE {$this->fieldPk}=:id;";
+        $this->db->delete($query, [':id' => $this->__get($this->fieldPk)], __FUNCTION__);
+        if ($this->db->getAffectedRows() === 0) {
             return false;
         }
         $this->dynamicFields = array();
@@ -234,6 +289,14 @@ class RowTbl {
      */
     public function getTableName() {
         return $this->table_name;
+    }
+
+    public function table() {
+        return Table::get($this->getTableName());
+    }
+
+    public function has_many($table_name, $foreignKey) {
+        return Table::get($table_name)->where($foreignKey, $this->{$this->fieldPk})->findAll();
     }
 
 }

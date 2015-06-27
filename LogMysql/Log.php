@@ -14,16 +14,34 @@ class Log {
 
     private static $log_data;
 
+    /**
+     * Metodo encargado de almacenar los mensajes generados al realizar una consulta a la BD
+     * 
+     * @param string $action Nombre de la función donde se ejecuto la consulta SQL
+     * @param string $msg Mensaje que se quiere mostrar 
+     */
     static function writeLog($action, $msg) {
         $action.=sizeof(self::$log_data) + 1;
         self::$log_data[$action] = $msg;
     }
 
-    static function showLog() {
-        echo "</br>Registro:</br>";
-        foreach (self::$log_data as $action => $msg) {
-            echo "[$action]: " . $msg . "</br>";
-        }
+    /**
+     * 
+     * @param boolean $return Si $return es false hara "echo" de los mensajes
+     * @return string 
+     */
+    static function showLog($return = false) {
+        $registros = "";
+        if (!empty(self::$log_data)):
+            $registros .= "</br>Registro:</br>";
+            foreach (self::$log_data as $action => $msg) {
+                $registros .= "[$action]: " . $msg . "</br>";
+            }
+        endif;
+        if ($return)
+            return $registros;
+        else
+            echo $registros;
     }
 
 }

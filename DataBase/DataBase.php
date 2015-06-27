@@ -3,14 +3,19 @@
 /**
  * @package DataBase
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
- * @link https://github.com/gecoreto/gecobject
+ * @link https://github.com/gecoreto/gecobject2
  * @author David Garzon <stylegeco@gmail.com>
  */
 
 namespace GecObject\DataBase;
 
-use GecObject\DataBase\Exception\ExceptionMysql;
+use GecObject\DataBaseExceptionExceptionMysql;
 use GecObject\LogMysql\Log;
+use PDO;
+use Exception;
+use Closure;
+use GecObject\DataBase\Exception\ExceptionMysql;
+use PDOException;
 
 final class DataBase {
 
@@ -19,49 +24,14 @@ final class DataBase {
      * 
      * @var Session $_instance
      */
-    private static $_instance;
-
-    /**
-     * Host
-     * 
-     * @var string $db_host
-     */
-    private static $db_host = DB_HOST;
-
-    /**
-     * Usuario de la base de datos
-     * 
-     * @var string $db_user
-     */
-    private static $db_user = DB_USER;
-
-    /**
-     * Password del usuario de la base de datos.
-     * 
-     * @var string $db_pass
-     */
-    private static $db_pass = DB_PASSWORD;
-
-    /**
-     * Nombre de la base de datos.
-     * 
-     * @var string $db_name
-     */
-    protected $db_name = DB_NAME;
-
-    /**
-     * Consultas MySql 
-     * 
-     * @var string $query
-     */
-    public $query;
+    protected static $_instance;
 
     /**
      * Gestiona la conexión con la base de datos.
      * 
-     * @var Mysqli $connec
+     * @var PDO $connec
      */
-    private $connec;
+    protected $connec;
 
     /**
      * Informa que lo sucecido con las consultas.
@@ -73,47 +43,99 @@ final class DataBase {
     /**
      * Obtiene el valor de la PRIMARY KEY después de un INSERT.
      * 
-     * @var string $last_id
+     * @var mixed $last_id
      */
-    private $last_id;
+    protected $last_id;
 
     /**
      * Numero de filas afectadas en una actualizacion o en una inserción
      * 
      * @var int affect_rows
      */
-    private $affect_rows;
+    protected $affect_rows;
 
     /**
      * Total de filas de una consulta Sql
      * 
      * @var int $num_count
      */
-    private $num_rows;
+    protected $num_rows;
+
+    /**
+     * Modo "fetch mode" por default de ls connection.
+     *
+     * @var int
+     */
+    protected $fetchMode = PDO::FETCH_ASSOC;
+
+    /**
+     * El prefijo de las tablas para la  conexión.
+     *
+     * @var string
+     */
+    protected $tablePrefix = '';
+
+    /**
+     * Configuración de la conexión a la base de datos.
+     *
+     * @var array
+     */
+    protected $config = array();
+
+    /**
+     * Atributos que seran limpiados antes de ejecutar una sentencia SQL.
+     *
+     * @var array
+     */
+    protected $clearAttrs = [
+        'affect_rows',
+        'last_id',
+        'message',
+        'num_rows'
+    ];
+
+    /**
+     * Obtiene un SQLSTATE asociado con la última operación en el manejador de la base de datos
+     * 
+     * @var boolean 
+     */
+    protected $error;
+
+    /** Si es true valida que el dato ingresado corresponda con el tipo de la columna
+     * 
+     * @property boolean validateField
+     */
+    protected $validateField;
+
+    public function __construct($config = array()) {
+        try {
+            if (empty($config) && empty(getConfigDb()))
+                throw new Exception("No se definieron las variables necesarias para conectar a la base de datos.");
+            $this->config = (empty($config)) ? getConfigDb() : $config;
+            $this->tablePrefix = $this->config['tablePrefix'];
+            $this->validateField = $this->config['validateField'];
+        } catch (Exception $exc) {
+            echo $exc->getMessage();
+        }
+    }
 
     /**
      *  Al finalizar la ejecución se muestra el registro de acciones.
      */
     function __destruct() {
-        if (LOG)
+        if (!empty($this->config) && $this->config['log'] == true)
             Log::showLog();
     }
 
     /**
      * Obtiene la instancia de la base de datos.
      * 
-     * @return Session
+     * @return Database
      */
-    public static function database() {
-        try {
-            if (!defined('DB_HOST') || !defined('DB_USER') || !defined('DB_PASSWORD') || !defined('DB_NAME'))
-                throw new \Exception("No se definieron las constantes necesarias para conectar a la base de datos.");
-        } catch (Exception $exc) {
-            echo $exc->getMessage();
-        }
+    public static function database($config = array()) {
         if (!isset(self::$_instance)) {
             $className = __CLASS__;
-            self::$_instance = new $className;
+            self::$_instance = new $className($config);
         }
         return self::$_instance;
     }
@@ -124,18 +146,19 @@ final class DataBase {
      * 
      * @param Boolean $message
      */
-    private function open_connection($message = false) {
-        $this->last_id = null;
-        $this->affect_rows = null;
-        $this->connec = new \mysqli(self::$db_host, self::$db_user, self::$db_pass, $this->db_name);
-        /* verificar conexión */
-        if (mysqli_connect_errno()) {
-            $this->errores("Errores en la Conexión: " . mysqli_connect_error($this->connec));
-            Log::writeLog(__FUNCTION__, "Conexion Fallida: " . mysqli_connect_error($this->connec));
+    protected function open_connection($message = false) {
+        $this->clear();
+        try {
+            $this->connec = new PDO("{$this->config['driver']}:dbname={$this->config['database']};host={$this->config['db_host']}", $this->config['db_user'], $this->config['db_pass'], array(PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES " . $this->config['charset'])
+            );
+            $this->connec->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        } catch (PDOException $e) {
+            Log::writeLog(__FUNCTION__, "Conexion Fallida: " . $e->getMessage());
+            throw new ExceptionMysql("ERRORES EN LA CONEXIÓN: " . $e->getMessage(), $e->getCode(), $this->config);
             exit();
         }
         if ($message)
-            Log::writeLog(__FUNCTION__, "Conexion Establecida: " . $this->connec->host_info);
+            Log::writeLog(__FUNCTION__, "Conexion Establecida: " . $this->connec->getAttribute(PDO::ATTR_CONNECTION_STATUS));
     }
 
     /**
@@ -144,108 +167,202 @@ final class DataBase {
      * 
      * @param Boolean $message
      */
-    private function close_connection($message = false) {
-        $this->connec->close();
+    protected function close_connection($message = false) {
         if ($message)
-            Log::writeLog(__FUNCTION__, "Conexion Cerrada: " . self::$db_host);
+            Log::writeLog(__FUNCTION__, "Conexion Cerrada: " . $this->connec->getAttribute(PDO::ATTR_CONNECTION_STATUS));
+        $this->error = $this->connec->errorCode();
+        $this->last_id = $this->connec->lastInsertId();
+        $this->connec = NULL;
     }
 
     /**
-     * Ejecuta de un query (INSERT - UPDATE - DELETE)
-     * Si $message es true escribe un mensaje de Log
-     * 
-     * @param Boolean $message
+     * Ejecuta una sentencia SQL 
+     *
+     * @param  string    $query
+     * @param  array     $bindings
+     * @param  \Closure  $callback
+     * @return mixed
+     *
+     * @throws Exception
      */
-    public function execute_single_query($message = false) {
-        $this->open_connection($message);
-        $this->connec->query($this->query) or ($this->errores("Error"));
-        $this->last_id = mysqli_insert_id($this->connec);
-        $this->affect_rows = mysqli_affected_rows($this->connec);
-        if ($message)
-            Log::writeLog(__FUNCTION__, "Consulta ejecutada: {$this->query}");
-        $this->close_connection($message);
-    }
-
-    /**
-     * Ejecuta varios querys al tiempo (INSERT - UPDATE - DELETE)<br>
-     * Ejemplo:<br>
-     * $this->query  = "SELECT CURRENT_USER();";<br>
-     * $this->query .= "SELECT Name FROM City ORDER BY ID LIMIT 20, 5"; 
-     *  Si $message es true escribe un mensaje de Log
-     * 
-     * @param Boolean $message
-     */
-    public function execute_multi_query($message = false) {
-        $this->open_connection($message);
-        $this->connec->multi_query($this->query) or ($this->errores());
-        $this->last_id = mysqli_insert_id($this->connec);
-        $this->affect_rows = mysqli_affected_rows($this->connec);
-        if ($message)
-            Log::writeLog(__FUNCTION__, "Consulta ejecutada: {$this->query}");
-        $this->close_connection($message);
-    }
-
-    /**
-     * Escape strings 
-     * 
-     * @param   mixed  String to escape 
-     * @return  string Escaped string, ready for SQL insertion 
-     */
-    public function escape($data) {
-        switch (gettype($data)) {
-            case 'string':
-                $data = "'" . mysql_real_escape_string($data) . "'";
-                break;
-            case 'boolean':
-                $data = (int) $data;
-                break;
-            case 'double':
-                $data = sprintf('%F', $data);
-                break;
-            default:
-                $data = ($data === null) ? 'null' : $data;
-        }
-        return (string) $data;
-    }
-
-    /**
-     * Retorna un result de un query.
-     * 
-     * @param Boolean $object
-     * @return Object | Array
-     */
-    public function get_results_from_query($object = false) {
+    protected function ejecutar($query, $bindings, Closure $callback, $action = __FUNCTION__) {
+        $this->clear();
         $this->open_connection(true);
-        //Si se ejecutan multiples consultas
-        if ($this->connec->multi_query($this->query)) {
-            Log::writeLog(__FUNCTION__, "Consulta ejecutada: {$this->query}");
-            $resultSet = array();
-            do {
-                /* almacenar primer juego de resultados */
-                if ($result = $this->connec->store_result()) {
-                    while ($row = $result->fetch_assoc()) {
-                        $resultSet[] = $row;
-                    }
-                    $result->free();
-                }
-            } while ($this->connec->next_result());
-        }
-        //si solo una consulta es ejecutada
-        else {
-            Log::writeLog(__FUNCTION__, "Consulta ejecutada: {$this->query}");
-            $result = $this->connec->query($this->query) or ($this->errores());
-            while ($rows[] = $result->fetch_assoc());
-            array_pop($rows);
-            $this->num_rows = count($rows);
-            if ($object) {
-                $resultSet = (object) $rows;
-            } else {
-                $resultSet = $rows;
-            }
-            $result->close();
+        try {
+            Log::writeLog($action, $query);
+            if (!empty($bindings))
+                Log::writeLog("Bindings", implode(" || ", $bindings));
+            $res = $callback($this, $query, $bindings);
+        } catch (PDOException $e) {
+            throw new ExceptionMysql($e->errorInfo[2], $e->errorInfo[1], $this->config);
+            exit();
         }
         $this->close_connection(true);
-        return $resultSet;
+        return $res;
+    }
+
+    /**
+     * Ejecuta una instrucción SQL
+     *
+     * @param  string    $query
+     * @param  array     $bindings
+     * @return bool
+     *
+     */
+    public function stmt($query, $bindings = array(), $action = __FUNCTION__) {
+        return $this->ejecutar($query, $bindings, function($me, $query, $bindings) {
+                    return $me->connec->prepare($query)
+                                    ->execute($bindings); //array(':calories' => $calorías, ':colour' => $color)                    
+                }, $action);
+    }
+
+    /**
+     * Ejecuta una instrucción SQL de insercción, actualización o eliminación
+     *
+     * @param  string    $query
+     * @param  array     $bindings
+     * @return int
+     *
+     */
+    public function affectedStmt($query, $bindings = array(), $action = __FUNCTION__) {
+        return $this->ejecutar($query, $bindings, function($me, $query, $bindings) {
+                    $stmt = $me->connec->prepare($query);
+                    $stmt->execute($bindings);
+                    return $me->affect_rows = $stmt->rowCount();
+                }, $action);
+    }
+
+    /**
+     * Ejecuta una instrucción select en la base de datos.
+     *
+     * @param  string  $query
+     * @param  array  $bindings
+     * @return array
+     */
+    public function select($query, $bindings = array(), $action = __FUNCTION__) {
+
+        return $this->ejecutar($query, $bindings, function($me, $query, $bindings) {
+                    $stmt = $me->connec->prepare($query);
+                    $stmt->execute($bindings);
+                    $me->num_rows = $stmt->rowCount();
+                    return $stmt->fetchAll($me->fetchMode);
+                }, $action);
+    }
+
+    /**
+     * Ejecuta una instrucción select en la base de datos devolviendo un unico resultado.
+     *
+     * @param  string  $query
+     * @param  array  $bindings
+     * @return mixed
+     */
+    public function selectOne($query, $bindings = array(), $action = __FUNCTION__) {
+        $rows = $this->select($query, $bindings, $action);
+        if (count($rows) > 0) {
+            $this->num_rows = 1;
+            return reset($rows);
+        } else {
+            return null;
+        }
+    }
+
+    /**
+     * Ejecuta varias instrucciones select en la base de datos.
+     *
+     * @param  string  $query
+     * @param  array  $bindings
+     * @return array
+     */
+    public function selectMultiQuery($query, $bindings = array(), $action = __FUNCTION__) {
+        return $this->ejecutar($query, $bindings, function($me, $query, $bindings) {
+                    $resultSet = array();
+                    $stmt = $me->connec->prepare($query);
+                    $stmt->execute($bindings);
+                    do {
+                        $resultSet[] = $stmt->fetchAll($me->fetchMode);
+                        $me->num_rows = $me->num_rows + $stmt->rowCount();
+                    } while ($stmt->nextRowset());
+                    return $resultSet;
+                }, $action);
+    }
+
+    /**
+     * Ejecuta una instrucción de inserción en la base de datos.
+     *
+     * @param  string  $query
+     * @param  array   $bindings
+     * @return bool
+     */
+    public function insert($query, $bindings = array(), $action = __FUNCTION__) {
+        return $this->stmt($query, $bindings, $action);
+    }
+
+    /**
+     * Ejecuta una instrucción de actualización en la base de datos.
+     *
+     * @param  string  $query
+     * @param  array   $bindings
+     * @return int
+     */
+    public function update($query, $bindings = array(), $action = __FUNCTION__) {
+        return $this->affectedStmt($query, $bindings, $action);
+    }
+
+    /**
+     *  Ejecuta una instrucción de borrado en la base de datos.
+     *
+     * @param  string  $query
+     * @param  array   $bindings
+     * @return int
+     */
+    public function delete($query, $bindings = array(), $action = __FUNCTION__) {
+        return $this->affectedStmt($query, $bindings, $action);
+    }
+
+    /**
+     * El prefijo de las tablas para la  connexión.
+     * 
+     * @param string $tablePrefix
+     */
+    public function setTablePrefix($tablePrefix) {
+        $this->tablePrefix = $tablePrefix;
+    }
+
+    /**
+     * El prefijo de las tablas para la  connexión.
+     * 
+     * @return string
+     */
+    public function getTablePrefix() {
+        return $this->tablePrefix;
+    }
+
+    /**
+     * Informa que lo sucecido con las consultas.
+     * 
+     * @return type
+     */
+    public function getMessage() {
+        return $this->message;
+    }
+
+    /**
+     * Obtiene el valor de la PRIMARY KEY después de un INSERT.
+     * 
+     * @var mixed $last_id
+     */
+    public function getLastId() {
+        return $this->last_id;
+    }
+
+    /**
+     * Numero de filas afectadas en una actualizacion o en una inserción
+     * 
+     * @return int 
+     */
+    public function getAffectedRows() {
+
+        return ($this->affect_rows == null) ? 0 : $this->affect_rows;
     }
 
     /**
@@ -253,78 +370,53 @@ final class DataBase {
      * 
      * @return int 
      */
-    public function num_rows() {
-        return $this->num_rows;
+    public function getNumRows() {
+
+        return ($this->num_rows == null) ? 0 : $this->num_rows;
     }
 
     /**
+     * Modo "fetch mode" por default de la connection.
      * 
-     * @return type
+     * @param int $fetchMode
      */
-    public function getAffectedRows() {
-        return $this->affect_rows;
+    public function setFetchMode($fetchMode) {
+        $this->fetchMode = $fetchMode;
     }
 
     /**
+     * Modo "fetch mode" por default de la connection.
      * 
-     * @return type
+     * @return int
      */
-    public function getLastId() {
-        return $this->last_id;
+    public function getFetchMode() {
+        return $this->fetchMode;
     }
 
     /**
-     * Genera un archivo informando de un error en algunos de los procesos del CRUD
+     * Limpia los atributos suministrados antes de ejecutar una sentencia SQL.
+     */
+    protected function clear() {
+        foreach ($this->clearAttrs as $attr) {
+            $this->{$attr} = null;
+        }
+    }
+
+    /**
+     * Obtiene un SQLSTATE asociado con la última operación en el manejador de la base de datos
      * 
-     * @param string $error
+     * @return boolean true si hubo error de lo contrario retorna false 
      */
-    private function errores($error = NULL) {
-        if(empty($error))
-            $error = mysqli_error($this->connec);
-        throw new ExceptionMysql($error, mysqli_errno($this->connec));
+    public function getError() {
+        return ($this->error == 00000) ? false : true;
     }
 
-    /**
-     * Inicia la transacción y actualiza a FALSE el autocommit.
-     *
-     * @return boolean
-     */
-    protected function begin() {
-        mysqli_query($this->connec, "BEGIN");
-        return true;
-    }
-
-    /**
-     * Guarda los cambios.
-     *
-     * @return void
-     */
-    protected function commit() {
-        return mysqli_query($this->connec, "COMMIT");
-    }
-
-    /**
-     * Ignora los cambios.
-     *
-     * @return void
-     */
-    protected function rollBack() {
-        return mysqli_query($this->connec, "ROLLBACK");
-    }
-
-    protected function set(&$value) {
-        $this->open_connection();
-        $value = mysqli_escape_string($this->connec, $value);
-        $this->close_connection();
-    }
-
-    /**
-     * LLama un procedimiento almacenado de la base de datos.
+    /** Si es true valida que el dato ingresado corresponda con el tipo de la columna
      * 
-     * @param string $procedure Nombre del procedure
-      protected function callProcedure($procedure) {
-
-      }
+     * @return boolean validateField
      */
+    public function getValidateField() {
+        return $this->validateField;
+    }
+
 }
-

@@ -1,15 +1,15 @@
 <?php
 
 /**
- * @package Exception
+ * @package GecObject\DataBase\Exception
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
- * @link https://github.com/gecoreto/gecobject
+ * @link https://github.com/gecoreto/gecobject2
  * @author David Garzon <stylegeco@gmail.com>
  */
 
 namespace GecObject\DataBase\Exception;
 
-class ExceptionMysql extends \Exception {
+class ExceptionMysql extends \PDOException {
 
     /**
      * Mensaje de la exception lanzada
@@ -24,15 +24,23 @@ class ExceptionMysql extends \Exception {
     protected $code;
 
     /**
+     * Configuración de la conexión a la base de datos.
+     *
+     * @var array
+     */
+    protected $config = array();
+
+    /**
      * Constructor inicializa los atributos de la clase
      * @param string $message Mensaje de la exception lanzada
      * @param integer $code Codigo de error generado en la consulta Mysql
      */
-    public function __construct($message, $code, $previous = null) {
-        parent::__construct($message, $code, $previous);
+    public function __construct($message = null, $code, $config) {
+        parent::__construct($message, (int) $code);
         $this->message = $message;
         $this->code = $code;
-        $this->changemessage();
+        $this->config = $config;
+        // $this->changemessage();
         $this->log();
     }
 
@@ -61,18 +69,27 @@ class ExceptionMysql extends \Exception {
      */
     private function log() {
         echo("---------ERROR EN CONSULTA MYSQL---------");
-        echo("<br>C&oacute;digo de error:\t $this->code");
-        echo("<br>Mensaje del error:\t $this->message");
+        echo("<br>C&oacute;digo de error:\t {$this->code}");
+        echo("<br>Mensaje del error:\t {$this->message}");
+        echo("<br>Lanzado en:\t <b>{$this->file}</b> en la linea <b>{$this->line}</b>");
         echo("<br>-------------------FIN--------------------");
-        //Si la constante global ERROR_EXCEPTION es true escribe los errores en un archivo de texto
-        if (ERROR_EXCEPTION) {
-            $ar = fopen("gecobject/LogMySql/error-mysql.txt", "a+") or exit($this->message);
-            fputs($ar, "\n\n\n---------" . gmdate("D, Y/m/d H:i:s", time() - 18000) . "---------");
-            fputs($ar, "\nCódigo de error:\t $this->code");
-            fputs($ar, "\nMensaje del error:\t $this->message");
-            fputs($ar, "\n---------Fin del error---------");
-            fclose($ar);
+        //Si ERROR_EXCEPTION es true escribe los errores en un archivo de texto
+        if (isset($this->config['error_exception']) && $this->config['error_exception'] == true) {
+            $this->logTxt();
         }
+    }
+
+    /**
+     * Imprime los mensajes de error en un archivo de texto
+     */
+    private function logTxt() {
+        $ar = fopen(dirname(__FILE__)."/../../LogMySql/error-mysql.txt", "a+") or exit($this->message);
+        fputs($ar, "\n\n\n---------" . gmdate("D, Y/m/d H:i:s", time() - 18000) . "---------");
+        fputs($ar, "\nCódigo de error:\t $this->code");
+        fputs($ar, "\nMensaje del error:\t $this->message");
+        fputs($ar, "\nLanzado en:\t $this->file en la linea $this->line");
+        fputs($ar, "\n---------Fin del error---------");
+        fclose($ar);
     }
 
 }

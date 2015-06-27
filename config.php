@@ -4,45 +4,54 @@
  * Carga los script necesarios y define las constantes para hacer la conexion en la baes de datos
  * @package Gecobject
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
- * @link https://github.com/gecoreto/gecobject/blob/master/config.php
+ * @link https://github.com/gecoreto/gecobject2/config.php
  * @author David Garzon <stylegeco@gmail.com>
  */
 //
 //  Incluye los archivos de las clases necesarios automaticamente 
 require 'autoload.php';
 
-header('Content-Type: text/html; charset=UTF-8');
+$config_db = array(
+    /** Nombre del host en la base de datos 
+     * @property type $name Description string DB_HOST
+     */
+    'db_host' => 'localhost',
+    /** Nombre de la base de datos 
+     * @property string DB_NAME
+     */
+    'database' => 'gecobject',
+    /** Usuario de la base de datos 
+     * @property string DB_USER
+     */
+    'db_user' => 'root',
+    /** Password para acceder a la base de datos 
+     * @property string DB_PASSWORD
+     */
+    'db_pass' => '',
+    /** Si es true Imprime el registro de mensajes
+     * @property boolean LOG
+     */
+    'log' => false,
+    /** Si es true guarda las excepsiones generadas en consultas
+     *  mysql en un archivo de texto ubicado en LogMysql/error-mysql.txt
+     * 
+     * @property boolean ERROR_EXCEPTION
+     */
+    'error_exception' => false,
+    /** Si es true valida que el dato ingresado corresponda con el tipo de la columna
+     * 
+     * @property boolean validateField
+     */
+    'validateField' => false,
+    'driver' => 'mysql',
+    'charset' => 'utf8',
+    'collation' => 'utf8_unicode_ci',
+    'tablePrefix' => 'appwork_',
+);
 
-/** Nombre del host en la base de datos 
- * Nota: Si presenta lentitud al generear la conexion con la DB en vez de poner "localhost" pon
- * la direccion ip de tu servidor que por defecto es: 127.0.0.1
- * @global string DB_HOST
- */
-define("DB_HOST", "127.0.0.1");
+function getConfigDb() {
+    global $config_db;
+    return $config_db;
+}
 
-/** Nombre de la base de datos 
- * @global string DB_NAME
- */
-define("DB_NAME", "gecobject");
-
-/** Usuario de la base de datos 
- * @global string DB_USER
- */
-define("DB_USER", "root");
-
-/** Password para acceder a la base de datos 
- * @global string DB_PASSWORD
- */
-define("DB_PASSWORD", "");
-
-/**Si es true Imprime el registro de mensajes
- * @global boolean LOG
- */
-define("LOG", true);
-/** Si es true guarda las excepsiones generadas en consultas
- *  mysql en un archivo de texto ubicado en LogMysql/error-mysql.txt
- * 
- * @global boolean ERROR_EXCEPTION
- */
-define("ERROR_EXCEPTION", false);
 ?>
