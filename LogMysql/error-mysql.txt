@@ -1,0 +1,9 @@
+
+**----**----**-----Excepciones generadas en consultas Mysql-----**------**-----**
+
+
+
+---------Tue, 2014/02/11 14:52:56---------
+Código de error:	 1054
+Mensaje del error:	 Unknown column 'adsf' in 'where clause'
+---------Fin del error---------
