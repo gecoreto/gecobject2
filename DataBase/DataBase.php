@@ -9,12 +9,11 @@
 
 namespace GecObject\DataBase;
 
-use GecObject\DataBaseExceptionExceptionMysql;
-use GecObject\LogMysql\Log;
+use GecObject\Log\Log;
 use PDO;
 use Exception;
 use Closure;
-use GecObject\DataBase\Exception\ExceptionMysql;
+use GecObject\DataBase\Exception\ExceptionG;
 use PDOException;
 
 final class DataBase {
@@ -107,6 +106,18 @@ final class DataBase {
      */
     protected $validateField;
 
+    /**
+     * Conectar a bases de datos PostgreSql
+     * @var string
+     */
+    const DRIVER_POSTGRESQL = 'pgsql';
+
+    /**
+     * Conectar a bases de datos MySql
+     * @var string
+     */
+    const DRIVER_MYSQL = 'mysql';
+
     public function __construct($config = array()) {
         try {
             if (empty($config) && empty(getConfigDb()))
@@ -154,7 +165,7 @@ final class DataBase {
             $this->connec->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         } catch (PDOException $e) {
             Log::writeLog(__FUNCTION__, "Conexion Fallida: " . $e->getMessage());
-            throw new ExceptionMysql("ERRORES EN LA CONEXIÓN: " . $e->getMessage(), $e->getCode(), $this->config);
+            throw new ExceptionG("ERRORES EN LA CONEXIÓN: " . $e->getMessage(), $e->getCode(), $this->config);
             exit();
         }
         if ($message)
@@ -194,7 +205,7 @@ final class DataBase {
                 Log::writeLog("Bindings", implode(" || ", $bindings));
             $res = $callback($this, $query, $bindings);
         } catch (PDOException $e) {
-            throw new ExceptionMysql($e->errorInfo[2], $e->errorInfo[1], $this->config);
+            throw new ExceptionG($e->errorInfo[2], $e->errorInfo[1], $this->config);
             exit();
         }
         $this->close_connection(true);

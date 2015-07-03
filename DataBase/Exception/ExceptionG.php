@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @package GecObject\DataBase\Exception
+ * @package GecObject\DataBase\ExceptionG
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  * @link https://github.com/gecoreto/gecobject2
  * @author David Garzon <stylegeco@gmail.com>
@@ -9,7 +9,7 @@
 
 namespace GecObject\DataBase\Exception;
 
-class ExceptionMysql extends \PDOException {
+class ExceptionG extends \PDOException {
 
     /**
      * Mensaje de la exception lanzada
@@ -68,7 +68,7 @@ class ExceptionMysql extends \PDOException {
      * Imprime los mensajes de error 
      */
     private function log() {
-        echo("---------ERROR EN CONSULTA MYSQL---------");
+        echo("---------ERROR EN CONSULTA SQL---------");
         echo("<br>C&oacute;digo de error:\t {$this->code}");
         echo("<br>Mensaje del error:\t {$this->message}");
         echo("<br>Lanzado en:\t <b>{$this->file}</b> en la linea <b>{$this->line}</b>");
@@ -83,7 +83,12 @@ class ExceptionMysql extends \PDOException {
      * Imprime los mensajes de error en un archivo de texto
      */
     private function logTxt() {
-        $ar = fopen(dirname(__FILE__)."/../../LogMySql/error-mysql.txt", "a+") or exit($this->message);
+        $rutaTxt = '';
+        if ($this->config['driver'] == \GecObject\DataBase\DataBase::DRIVER_MYSQL)
+            $rutaTxt = dirname(__FILE__) . "/../../Log/error-mysql.txt";
+        else if ($this->config['driver'] == \GecObject\DataBase\DataBase::DRIVER_POSTGRESQL)
+            $rutaTxt = dirname(__FILE__) . "/../../Log/error-postgresql.txt";
+        $ar = fopen($rutaTxt, "a+") or exit($this->message);
         fputs($ar, "\n\n\n---------" . gmdate("D, Y/m/d H:i:s", time() - 18000) . "---------");
         fputs($ar, "\nCódigo de error:\t $this->code");
         fputs($ar, "\nMensaje del error:\t $this->message");

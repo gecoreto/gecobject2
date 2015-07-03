@@ -1,0 +1,11 @@
+
+**----**----**-----Excepciones generadas en consultas Postgresql-----**------**-----**
+
+
+---------Fri, 2015/07/03 09:51:16---------
+Código de error:	 7
+Mensaje del error:	 ERROR:  no existe la relación «usuariostales»
+LINE 1: SELECT * FROM usuariostales;
+                      ^
+Lanzado en:	 C:\xampp\htdocs\github\gecobject2\DataBase\DataBase.php en la linea 208
+---------Fin del error---------

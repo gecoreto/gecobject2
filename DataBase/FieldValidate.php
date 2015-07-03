@@ -4,6 +4,8 @@
  * Métodos para la validación de campos. Comprueba si el valor asignado a 
  * un campo se ajusta a las restricciones de tipo de columna y longitud.
  * 
+ * NOTA: Por el momento solo funciona con bases de datos Mysql
+ * 
  * @package Database
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  * @author Juan Haro <juanharo@gmail.com> Modificado by David Garzon <stylegeco@gmail.com>

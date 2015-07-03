@@ -12,8 +12,8 @@
  * require 'DataBase/Table.php';
  * require 'DataBase/RowTbl.php';
  * require 'DataBase/DataBase.php';
- * require 'LogMysql/Log.php';
- * require 'DataBase/Exception/ExceptionMysql.php';
+ * require 'Log/Log.php';
+ * require 'DataBase/Exception/ExceptionG.php';
  * require 'GecObject\DataBase\Builder\QueryBuilder';
  * require 'GecObject\DataBase\Builder\QueryCompiler';
  * @param string $classname es igual al namespace o nombre de clase de un archivo
@@ -36,8 +36,8 @@ function __autoload($classname) {
       require_once 'DataBase/Table.php';
       require_once 'DataBase/RowTbl.php';
       require_once 'DataBase/DataBase.php';
-      require_once 'LogMysql/Log.php';
-      require_once 'DataBase/Exception/ExceptionMysql.php';
+      require_once 'Log/Log.php';
+      require_once 'DataBase/Exception/ExceptionG.php';
       require_once 'GecObject\DataBase\Builder\QueryBuilder';
       require_once 'GecObject\DataBase\Builder\QueryCompiler';
      */
