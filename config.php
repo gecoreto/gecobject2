@@ -56,7 +56,7 @@ $config_db = array(
      */
     /**
      *  Ejemplo consultas POSTGRESQL:
-            require '../config.php';
+            require 'gecobject2/config.php';
             $db = Db::database();
             $rows = $db->select("SELECT * FROM usuarios LIMIT 10;");
             foreach ($rows as $user) {
